@@ -42,7 +42,7 @@ const exampleEntry: WorldEntry = {
 
 vi.mock('virtual:worlds', () => ({ default: [exampleEntry] }))
 
-const { loadWorlds, fetchWorlds, getSplatUrl } = await import('./worldLoader')
+const { loadWorlds, fetchWorlds, getSplatUrl, getDeployedSplatUrl } = await import('./worldLoader')
 
 describe('worldLoader', () => {
   it('returns WorldEntry array with correct slug', () => {
@@ -66,53 +66,55 @@ describe('worldLoader', () => {
     vi.unstubAllGlobals()
   })
 
-  it('getSplatUrl always uses full-res', () => {
-    const world = {
+  function withSplats(spz_urls: World['assets']['splats']['spz_urls']): World {
+    return {
       ...exampleWorld,
       assets: {
         ...exampleWorld.assets,
-        splats: {
-          ...exampleWorld.assets.splats,
-          spz_urls: {
-            ...exampleWorld.assets.splats.spz_urls,
-            full_res: '/worlds/example/output/world/0-world-full_res.spz',
-          },
-        },
+        splats: { ...exampleWorld.assets.splats, spz_urls },
       },
     }
-    const url = getSplatUrl(world)
-    expect(url).toBe('/worlds/example/output/world/0-world-full_res.spz')
+  }
+
+  const fullRes = '/worlds/example/output/world/0-world-full_res.spz'
+  const splat500k = '/worlds/example/output/world/0-world-500k.spz'
+  const splat150k = '/worlds/example/output/world/0-world-150k.spz'
+  const splat100k = '/worlds/example/output/world/0-world-100k.spz'
+
+  it('prefers full-res in development', () => {
+    expect(getSplatUrl(withSplats({ full_res: fullRes, '500k': splat500k }))).toBe(fullRes)
   })
 
-  it('getSplatUrl returns empty when full-res is absent', () => {
-    expect(getSplatUrl(exampleWorld)).toBe('')
+  it('falls back to 500k in development', () => {
+    expect(getSplatUrl(exampleWorld)).toBe(splat500k)
+    expect(getSplatUrl(withSplats({ full_res: 'https://cdn.example.com/full.spz', '500k': splat500k }))).toBe(splat500k)
   })
 
-  it('getSplatUrl ignores non-full-res splats', () => {
-    const world = {
-      ...exampleWorld,
-      assets: {
-        ...exampleWorld.assets,
-        splats: {
-          ...exampleWorld.assets.splats,
-          spz_urls: { '150k': '/worlds/example/output/world/0-world-150k.spz' },
-        },
-      },
-    }
-    expect(getSplatUrl(world)).toBe('')
+  it('uses the remaining development fallback chain', () => {
+    expect(getSplatUrl(withSplats({ '150k': splat150k, '100k': splat100k }))).toBe(splat150k)
+    expect(getSplatUrl(withSplats({ '100k': splat100k }))).toBe(splat100k)
   })
 
-  it('getSplatUrl refuses provider URLs', () => {
-    const world = {
-      ...exampleWorld,
-      assets: {
-        ...exampleWorld.assets,
-        splats: {
-          ...exampleWorld.assets.splats,
-          spz_urls: { full_res: 'https://cdn.example.com/splat_full.spz' },
-        },
-      },
-    }
-    expect(getSplatUrl(world)).toBe('')
+  it('never selects full-res in deployed builds', () => {
+    expect(getDeployedSplatUrl(withSplats({ full_res: fullRes, '500k': splat500k }))).toBe(splat500k)
+    expect(getDeployedSplatUrl(withSplats({ full_res: fullRes }))).toBe('')
+  })
+
+  it('falls back through 500k, 150k, and 100k in deployed builds', () => {
+    expect(getDeployedSplatUrl(withSplats({ '500k': splat500k, '150k': splat150k, '100k': splat100k }))).toBe(splat500k)
+    expect(getDeployedSplatUrl(withSplats({ '150k': splat150k, '100k': splat100k }))).toBe(splat150k)
+    expect(getDeployedSplatUrl(withSplats({ '100k': splat100k }))).toBe(splat100k)
+    expect(getDeployedSplatUrl(withSplats({ '500k': 'https://cdn.example.com/500k.spz', '150k': splat150k }))).toBe(splat150k)
+  })
+
+  it('returns empty when no deployable local splat exists', () => {
+    expect(getDeployedSplatUrl(withSplats({}))).toBe('')
+    expect(getDeployedSplatUrl(withSplats({
+      full_res: fullRes,
+      '500k': 'https://cdn.example.com/500k.spz',
+      '150k': '/other/150k.spz',
+      '100k': 'data:application/octet-stream;base64,AAAA',
+    }))).toBe('')
+    expect(getSplatUrl(withSplats({ full_res: 'https://cdn.example.com/full.spz' }))).toBe('')
   })
 })

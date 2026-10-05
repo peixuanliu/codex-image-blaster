@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "codex-image-blaster",
+  "compatibility_date": "2026-10-05",
+  "assets": {
+    "directory": "./app/dist",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
